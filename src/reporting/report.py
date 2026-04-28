@@ -1,8 +1,5 @@
-"""Reporter — pretty-print a run's metadata + Q1/Q2/Q3 tables from Postgres."""
 from __future__ import annotations
-
 from typing import Any
-
 import psycopg2
 from tabulate import tabulate
 

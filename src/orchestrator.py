@@ -1,14 +1,3 @@
-"""Orchestrator — dispatch backend, time the run, write runs row, clean staging.
-
-Runtime measurement (per project statement §"Batching and Runtime Reporting")
-covers ingestion start through final result load to Postgres. It excludes
-report rendering and the orchestrator's setup work that follows commit.
-
-FK ordering: q1/q2/q3 rows reference runs(run_id) immediately. We therefore
-INSERT runs first with placeholder finished_at/runtime_ms (== started_at / 0)
-so the loader can attach its rows, then UPDATE the timing fields once load
-completes. The whole sequence is one transaction.
-"""
 from __future__ import annotations
 
 import logging

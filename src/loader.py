@@ -1,13 +1,4 @@
-"""Loader — copies Mongo q*_final collections into Postgres result tables.
 
-Engine-agnostic by design: it only touches the three well-known final
-collections (q1_final, q2_final, q3_final) so any Phase-2 backend that writes
-the same shape will work without changes here.
-
-Transaction model: the loader does NOT commit. The caller (orchestrator) owns
-the transaction so that the runs row UPDATE and the q*_final inserts land in a
-single commit.
-"""
 from __future__ import annotations
 
 import logging
