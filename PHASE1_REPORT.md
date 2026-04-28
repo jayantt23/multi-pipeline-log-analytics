@@ -1,5 +1,4 @@
 # Phase 1 Report
-
 ## Multi-Pipeline ETL & Reporting Framework for Web Server Log Analytics
 
 **Course:** DAS 839 — NoSQL Systems, End-Semester Project
@@ -8,6 +7,9 @@
 **Pipelines deferred to Phase 2:** Apache Pig, Apache Hive, Hadoop MapReduce
 
 ---
+
+## Github Link:
+https://github.com/jayantt23/multi-pipeline-log-analytics
 
 ## Executive Summary
 
@@ -95,14 +97,14 @@ The `Pipeline` ABC (`src/pipelines/base.py`) defines the five lifecycle methods 
 
 ### 1.3 Decisions & rationale
 
-| Decision              | Choice                                                                       | Reason                                                                                                              |
-| --------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Orchestrator language | Python 3.11                                                                  | Best `argparse` / `subprocess` story, native pymongo and psycopg2-binary                                            |
-| Result store          | PostgreSQL 16                                                                | Project allows MySQL or Postgres; chose Postgres for `NUMERIC(20,6)` and `TIMESTAMPTZ`                              |
-| Batching strategy     | **Native, in-engine, logical** (computed by Mongo, not pre-sliced by Python) | Compliance with the project's "core data processing must genuinely happen in the chosen execution technology" rule  |
-| `batch_id` formula    | `floor((ordinal − 1) / N) + 1`                                               | Single integer formula, identical across all four engines                                                           |
-| Distinct counts       | **Exact**, via staged distinct-pair collections                              | Rejects HLL / probabilistic drift across engines                                                                    |
-| Phase 1 backend       | MongoDB                                                                      | Easiest path to a fully-runnable pipeline; aggregation framework natively supports regex parsing + windowed ranking |
+| Decision | Choice | Reason |
+|---|---|---|
+| Orchestrator language | Python 3.11 | Best `argparse` / `subprocess` story, native pymongo and psycopg2-binary |
+| Result store | PostgreSQL 16 | Project allows MySQL or Postgres; chose Postgres for `NUMERIC(20,6)` and `TIMESTAMPTZ` |
+| Batching strategy | **Native, in-engine, logical** (computed by Mongo, not pre-sliced by Python) | Compliance with the project's "core data processing must genuinely happen in the chosen execution technology" rule |
+| `batch_id` formula | `floor((ordinal − 1) / N) + 1` | Single integer formula, identical across all four engines |
+| Distinct counts | **Exact**, via staged distinct-pair collections | Rejects HLL / probabilistic drift across engines |
+| Phase 1 backend | MongoDB | Easiest path to a fully-runnable pipeline; aggregation framework natively supports regex parsing + windowed ranking |
 
 ---
 
@@ -120,14 +122,14 @@ Capture groups: `host`, `timestamp_raw`, `request_raw`, `status_raw`, `bytes_raw
 
 ### 2.2 Field-level rules
 
-| Field                                                | Source                        | Rule                                                                                                                                       |
-| ---------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `host`                                               | capture 1                     | first whitespace-delimited token                                                                                                           |
-| `timestamp_raw`                                      | capture 2                     | parsed via `%d/%b/%Y:%H:%M:%S %z`                                                                                                          |
-| `log_date`, `log_hour`                               | derived                       | extracted in the **timestamp's own offset** — no UTC conversion (so engines with different default TZ behaviour produce identical results) |
-| `http_method` / `resource_path` / `protocol_version` | capture 3 split on whitespace | tokens 1, 2, 3 — missing tokens become `NULL`, **not malformed**                                                                           |
-| `bytes_transferred`                                  | capture 5                     | `"-"` → `0`; numeric otherwise                                                                                                             |
-| `status_code`                                        | capture 4                     | `"-"` → record is **malformed**                                                                                                            |
+| Field | Source | Rule |
+|---|---|---|
+| `host` | capture 1 | first whitespace-delimited token |
+| `timestamp_raw` | capture 2 | parsed via `%d/%b/%Y:%H:%M:%S %z` |
+| `log_date`, `log_hour` | derived | extracted in the **timestamp's own offset** — no UTC conversion (so engines with different default TZ behaviour produce identical results) |
+| `http_method` / `resource_path` / `protocol_version` | capture 3 split on whitespace | tokens 1, 2, 3 — missing tokens become `NULL`, **not malformed** |
+| `bytes_transferred` | capture 5 | `"-"` → `0`; numeric otherwise |
+| `status_code` | capture 4 | `"-"` → record is **malformed** |
 
 ### 2.3 Malformed records
 
@@ -240,7 +242,7 @@ flowchart LR
     Q3M -- "compute error_rate<br/>= error / total<br/>($round 6 decimals)" --> Q3F[(q3_final)]
 ```
 
-Why `$push` + `$unwind` and not `$setWindowFields($documentNumber)` for Q2 ranking? `$documentNumber` requires a _single-element_ `sortBy`, which can't express our two-key tie-break (`request_count DESC, resource_path ASC`). The `$sort + $limit(20)` step already establishes the canonical order; `$push` preserves that order, and `$unwind` with `includeArrayIndex` exposes the position as the rank. We also `$project: {_pairs: 0}` between `$lookup` and `$push` to discard the per-resource host arrays — without that, hot resources with 80k+ distinct hosts would push the in-memory accumulator past the 100 MB limit.
+Why `$push` + `$unwind` and not `$setWindowFields($documentNumber)` for Q2 ranking? `$documentNumber` requires a *single-element* `sortBy`, which can't express our two-key tie-break (`request_count DESC, resource_path ASC`). The `$sort + $limit(20)` step already establishes the canonical order; `$push` preserves that order, and `$unwind` with `includeArrayIndex` exposes the position as the rank. We also `$project: {_pairs: 0}` between `$lookup` and `$push` to discard the per-resource host arrays — without that, hot resources with 80k+ distinct hosts would push the in-memory accumulator past the 100 MB limit.
 
 ---
 
@@ -257,7 +259,7 @@ Two important properties of our implementation:
 - **Native** — Python does not pre-slice the input. It only streams raw text into one collection (`raw_logs_<run_id>`) with explicit monotonically-increasing `_id` values 1..N. The batch boundaries are derived **inside MongoDB** via `$addFields` (see formula below).
 - **Logical** — there is no physical separation: parsed records all sit in `parsed_<run_id>`; their batch is just a tag (`batch_id`). The same data can be re-batched at a different `N` simply by re-running the aggregation with a different parameter, no re-ingestion needed.
 
-This satisfies the implementation constraint that _"core data processing must genuinely happen using the selected execution technology"_. Pre-tokenising or pre-slicing in Python would be partial substitution, which the project statement disallows.
+This satisfies the implementation constraint that *"core data processing must genuinely happen using the selected execution technology"*. Pre-tokenising or pre-slicing in Python would be partial substitution, which the project statement disallows.
 
 ### 4.3 The formula
 
@@ -281,24 +283,24 @@ Including malformed lines. If we computed ordinals only over parsed records, the
 
 ### 4.5 Per-engine ordinal primitive (forward-looking)
 
-| Engine            | Ordinal source                                                                 |
-| ----------------- | ------------------------------------------------------------------------------ |
-| MongoDB (Phase 1) | explicit `_id = 1..N` set during ingestion                                     |
-| Hive              | `ROW_NUMBER() OVER (ORDER BY <stable_input_order>)`                            |
-| Pig               | `RANK <relation> BY ... DENSE` over the same stable order                      |
-| MapReduce         | line-offset emitted by the input format, then a single-reducer 1..N assignment |
+| Engine | Ordinal source |
+|---|---|
+| MongoDB (Phase 1) | explicit `_id = 1..N` set during ingestion |
+| Hive | `ROW_NUMBER() OVER (ORDER BY <stable_input_order>)` |
+| Pig | `RANK <relation> BY ... DENSE` over the same stable order |
+| MapReduce | line-offset emitted by the input format, then a single-reducer 1..N assignment |
 
 The formula `floor((ordinal − 1) / N) + 1` is identical in every engine.
 
 ### 4.6 Reporting metadata
 
-| Field             | Value (this run, N = 100,000)                                   |
-| ----------------- | --------------------------------------------------------------- |
-| `batch_size`      | 100,000                                                         |
-| `num_batches`     | 35 — `max(batch_id)` over `parsed_<run_id>`                     |
-| `avg_batch_size`  | 98,902.29 — `total_records / num_batches` per project statement |
-| `total_records`   | 3,461,580 — parsed (excludes 33 malformed)                      |
-| `malformed_count` | 33                                                              |
+| Field | Value (this run, N = 100,000) |
+|---|---|
+| `batch_size` | 100,000 |
+| `num_batches` | 35 — `max(batch_id)` over `parsed_<run_id>` |
+| `avg_batch_size` | 98,902.29 — `total_records / num_batches` per project statement |
+| `total_records` | 3,461,580 — parsed (excludes 33 malformed) |
+| `malformed_count` | 33 |
 
 ---
 
@@ -368,12 +370,12 @@ The full DDL is in `sql/schema.sql`. Key points:
 
 The project statement requires the relational store to record **pipeline name, run identifier, batch identifier, time of execution**. Mapping:
 
-| Required          | Where in our schema                                                                     |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| pipeline name     | `runs.pipeline`                                                                         |
-| run identifier    | `runs.run_id` (referenced by all q\* tables)                                            |
-| batch identifier  | `runs.num_batches` + `runs.batch_size` (the formula recovers `batch_id` for any record) |
-| time of execution | `runs.started_at`, `runs.finished_at`, `runs.runtime_ms`                                |
+| Required | Where in our schema |
+|---|---|
+| pipeline name | `runs.pipeline` |
+| run identifier | `runs.run_id` (referenced by all q* tables) |
+| batch identifier | `runs.num_batches` + `runs.batch_size` (the formula recovers `batch_id` for any record) |
+| time of execution | `runs.started_at`, `runs.finished_at`, `runs.runtime_ms` |
 
 Reporting metadata required (pipeline, query name, runtime, batch ID, batch size, average batch size) is all materialised in the `runs` row and shown in the report header.
 
@@ -438,38 +440,38 @@ python -m src.cli report --run-id <printed_id>
 
 ### 7.3 Q1 sample (295 rows total)
 
-| log_date   | status_code | request_count | total_bytes   |
-| ---------- | ----------- | ------------- | ------------- |
+| log_date   | status_code | request_count | total_bytes |
+|------------|-------------|---------------|-------------|
 | 1995-07-01 | 200         | 58 033        | 1 617 409 574 |
-| 1995-07-01 | 302         | 2 568         | 218 465       |
-| 1995-07-01 | 304         | 3 797         | 0             |
-| 1995-07-01 | 404         | 316           | 0             |
-| 1995-07-03 | 500         | 53            | 0             |
-| 1995-08-31 | 200         | …             | …             |
+| 1995-07-01 | 302         | 2 568         | 218 465 |
+| 1995-07-01 | 304         | 3 797         | 0 |
+| 1995-07-01 | 404         | 316           | 0 |
+| 1995-07-03 | 500         | 53            | 0 |
+| 1995-08-31 | 200         | …             | … |
 
 ### 7.4 Q2 — top 20 requested resources
 
-| rank | resource_path                | request_count | total_bytes | distinct_host_count |
-| ---- | ---------------------------- | ------------- | ----------- | ------------------- |
-| 1    | /images/NASA-logosmall.gif   | 208 798       | 131 778 402 | 81 518              |
-| 2    | /images/KSC-logosmall.gif    | 164 976       | 169 364 272 | 85 161              |
-| 3    | /images/MOSAIC-logosmall.gif | 127 916       | 40 594 653  | 54 904              |
-| 4    | /images/USA-logosmall.gif    | 127 082       | 25 993 422  | 54 498              |
-| 5    | /images/WORLD-logosmall.gif  | 125 933       | 73 796 052  | 54 054              |
-| 6    | /images/ksclogo-medium.gif   | 121 580       | 629 750 296 | 49 491              |
-| 7    | /ksc.html                    | 83 918        | 563 742 661 | 29 191              |
-| 8    | /images/launch-logo.gif      | 76 009        | 114 690 489 | 42 558              |
-| …    | …                            | …             | …           | …                   |
-| 20   | /icons/blank.xbm             | 28 852        | 13 214 149  | 17 846              |
+| rank | resource_path                              | request_count | total_bytes | distinct_host_count |
+|------|--------------------------------------------|---------------|-------------|---------------------|
+| 1    | /images/NASA-logosmall.gif                 | 208 798       | 131 778 402 | 81 518 |
+| 2    | /images/KSC-logosmall.gif                  | 164 976       | 169 364 272 | 85 161 |
+| 3    | /images/MOSAIC-logosmall.gif               | 127 916       |  40 594 653 | 54 904 |
+| 4    | /images/USA-logosmall.gif                  | 127 082       |  25 993 422 | 54 498 |
+| 5    | /images/WORLD-logosmall.gif                | 125 933       |  73 796 052 | 54 054 |
+| 6    | /images/ksclogo-medium.gif                 | 121 580       | 629 750 296 | 49 491 |
+| 7    | /ksc.html                                  |  83 918       | 563 742 661 | 29 191 |
+| 8    | /images/launch-logo.gif                    |  76 009       | 114 690 489 | 42 558 |
+| …    | …                                          | …             | …           | … |
+| 20   | /icons/blank.xbm                           |  28 852       |  13 214 149 | 17 846 |
 
 Top resource is `/images/NASA-logosmall.gif` — consistent with the NASA Kennedy Space Center site's structure (a logo image embedded on every page).
 
 ### 7.5 Q3 sample (1,350 rows total)
 
 | log_date   | log_hour | error_request_count | total_request_count | error_rate | distinct_error_hosts |
-| ---------- | -------- | ------------------- | ------------------- | ---------- | -------------------- |
-| 1995-07-01 | 0        | 24                  | 3 565               | 0.006732   | 12                   |
-| 1995-07-01 | 1        | …                   | …                   | …          | …                    |
+|------------|----------|---------------------|---------------------|------------|----------------------|
+| 1995-07-01 | 0        | 24                  | 3 565               | 0.006732   | 12 |
+| 1995-07-01 | 1        | …                   | …                   | …          | … |
 
 ### 7.6 Test suite
 
@@ -502,26 +504,26 @@ $ pytest -q
 
 ### 8.3 Hardening applied after the in-tree code review
 
-| #                            | Issue                                                                                                                  | Fix                                                                                  |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Loader committed too early   | Loader called `pg_conn.commit()` before the runs-row UPDATE, so a subsequent failure left `runtime_ms = 0` permanently | Removed the commit; orchestrator owns the single-transaction commit                  |
-| Connection leak              | `psycopg2.connect()` as a context manager only manages the transaction, not the connection itself                      | Explicit `pg_conn.close()` in `finally` blocks (orchestrator + reporter)             |
-| Whitespace-only request line | `"   "` would set `http_method=""` instead of NULL                                                                     | `req_tokens` now uses `$filter` to drop empty tokens before length check             |
-| Re-run safety                | `insert_many(ordered=True)` aborted the whole batch on a duplicate `_id` retry                                         | `ordered=False` so partial duplicates are reported but ingestion continues           |
-| Run-status tracking          | A failed run left `runtime_ms = 0` indistinguishable from a real result                                                | New `runs.status` column: `'running'` on placeholder INSERT, `'completed'` on UPDATE |
-| Empty-input guard            | `total_records == 0` would write a meaningless runs row                                                                | Orchestrator now raises `RuntimeError` before any DB write                           |
-| Final-collection cleanup     | `q*_final` Mongo collections lingered after load                                                                       | Added to `_STAGING_PREFIXES`                                                         |
+| # | Issue | Fix |
+|---|---|---|
+| Loader committed too early | Loader called `pg_conn.commit()` before the runs-row UPDATE, so a subsequent failure left `runtime_ms = 0` permanently | Removed the commit; orchestrator owns the single-transaction commit |
+| Connection leak | `psycopg2.connect()` as a context manager only manages the transaction, not the connection itself | Explicit `pg_conn.close()` in `finally` blocks (orchestrator + reporter) |
+| Whitespace-only request line | `"   "` would set `http_method=""` instead of NULL | `req_tokens` now uses `$filter` to drop empty tokens before length check |
+| Re-run safety | `insert_many(ordered=True)` aborted the whole batch on a duplicate `_id` retry | `ordered=False` so partial duplicates are reported but ingestion continues |
+| Run-status tracking | A failed run left `runtime_ms = 0` indistinguishable from a real result | New `runs.status` column: `'running'` on placeholder INSERT, `'completed'` on UPDATE |
+| Empty-input guard | `total_records == 0` would write a meaningless runs row | Orchestrator now raises `RuntimeError` before any DB write |
+| Final-collection cleanup | `q*_final` Mongo collections lingered after load | Added to `_STAGING_PREFIXES` |
 
 ### 8.2 Phase 2 work
 
-| Item                             | Owner | Notes                                                                                                                                   |
-| -------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Apache Pig backend               | TBD   | Same ABC; ordinal via `RANK ... DENSE`; same regex via `REGEX_EXTRACT_ALL`; same distinct-pair pattern via `DISTINCT` then `COUNT_STAR` |
-| Apache Hive backend              | TBD   | Ordinal via `ROW_NUMBER()`; `regexp_extract` for parsing; native `COUNT(DISTINCT ...)` for Q2/Q3 distincts                              |
-| Hadoop MapReduce backend         | TBD   | Two-pass: first pass assigns ordinals via single reducer; second pass parses and emits per-batch partials; combiners for Q1/Q2/Q3 sums  |
-| Cross-engine equivalence diff    | TBD   | SQL `EXCEPT` between any two `run_id`s; Q1/Q2/Q3 expected to be byte-identical                                                          |
-| Comparative report (Phase 2 PDF) | TBD   | Runtime / lines-of-code / difficulty per engine; observations on suitability                                                            |
-| Video demo                       | TBD   | Live demo of pipeline switching, with all four backends populating the same Postgres tables                                             |
+| Item | Owner | Notes |
+|---|---|---|
+| Apache Pig backend | TBD | Same ABC; ordinal via `RANK ... DENSE`; same regex via `REGEX_EXTRACT_ALL`; same distinct-pair pattern via `DISTINCT` then `COUNT_STAR` |
+| Apache Hive backend | TBD | Ordinal via `ROW_NUMBER()`; `regexp_extract` for parsing; native `COUNT(DISTINCT ...)` for Q2/Q3 distincts |
+| Hadoop MapReduce backend | TBD | Two-pass: first pass assigns ordinals via single reducer; second pass parses and emits per-batch partials; combiners for Q1/Q2/Q3 sums |
+| Cross-engine equivalence diff | TBD | SQL `EXCEPT` between any two `run_id`s; Q1/Q2/Q3 expected to be byte-identical |
+| Comparative report (Phase 2 PDF) | TBD | Runtime / lines-of-code / difficulty per engine; observations on suitability |
+| Video demo | TBD | Live demo of pipeline switching, with all four backends populating the same Postgres tables |
 
 ---
 
