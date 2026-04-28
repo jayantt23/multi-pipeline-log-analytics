@@ -21,10 +21,10 @@ import psycopg2
 
 from .loader import load
 from .pipelines.base import Pipeline, RunStats
-from .pipelines.hive import HivePipeline
-from .pipelines.mongodb import MongoPipeline
-from .pipelines.mr import MapReducePipeline
-from .pipelines.pig import PigPipeline
+from .pipelines.mongodb.etl_pipeline import MongoPipeline
+from .pipelines.hive.etl_pipeline import HivePipeline
+from .pipelines.pig.etl_pipeline import PigPipeline
+from .pipelines.mr.etl_pipeline import MapReducePipeline
 
 log = logging.getLogger(__name__)
 
