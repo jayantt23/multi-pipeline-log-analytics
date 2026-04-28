@@ -74,3 +74,10 @@ Smoke-level coverage: regex parsing edge cases, batch-id formula, tiny in-memory
 ## Phase 2 (later)
 
 Pig, Hive, MapReduce backends wired into the same `Pipeline` ABC contract; cross-engine equivalence diff for Q1/Q2/Q3; comparative report.
+
+## Team
+Nirbhay Sharma IMT2023103 
+
+Garv Rajput IMT2023505
+
+Jayant Sharma IMT2023523
