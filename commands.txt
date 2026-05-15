@@ -1,0 +1,14 @@
+psql "postgresql://etl:etl@localhost:5432/etl" -c "SELECT run_id, pipeline, runtime_ms, batch_size, num_batches FROM runs;"
+
+
+psql "postgresql://etl:etl@localhost:5432/etl" -c "SELECT run_id, pipeline, status, started_at, finished_at, runtime_ms,
+               batch_size, num_batches, avg_batch_size,
+               total_records, malformed_count
+        FROM runs WHERE run_id = '';"
+
+psql "postgresql://etl:etl@localhost:5432/etl" -c "SELECT log_date, request_count, total_bytes FROM q1_daily_traffic WHERE run_id = '' LIMIT 10;"
+
+psql "postgresql://etl:etl@localhost:5432/etl" -c "SELECT log_date, request_count, total_bytes FROM q1_daily_traffic WHERE run_id = '' LIMIT 10;"
+
+psql "postgresql://etl:etl@localhost:5432/etl" -c "SELECT rank, resource_path, request_count FROM q2_top_resources WHERE run_id = '' ORDER BY rank LIMIT 5;"
+
