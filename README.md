@@ -63,6 +63,14 @@ python -m src.cli report --run-id <RUN_ID>
 
 For the comparative demo, repeat `run` with `--batch-size 50000` and `--batch-size 200000`. `num_batches` should change but the Q1/Q2/Q3 result rows must be identical.
 
+### Pig (file-based batching)
+
+Pig uses file-based batching only (Jul=1, Aug=2). Omit `--batch-size` and ensure `pig` is on your PATH.
+
+```bash
+python -m src.cli run --pipeline pig --input ../dataset/
+```
+
 ## Tests
 
 ```bash

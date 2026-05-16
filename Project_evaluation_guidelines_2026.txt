@@ -1,0 +1,94 @@
+DAS 839 – NoSQL Systems End Semester Project – Evaluation Guidelines
+Evaluation Guidelines
+Multi-Pipeline ETL and Reporting Framework
+The evaluation of the end semester project will focus on how systematically each group designs
+and implements the complete data management workflow. The project is not only about pro-
+ducing analytical observations, but about demonstrating a structured approach to ETL design,
+pipeline integration, batching, metadata capture, and relational reporting.
+Students are expected to implement all four execution pipelines, namelyPig, MapReduce,
+MongoDB, and Hive, and execute the same set of queries across them. The final results
+must be loaded into a relational database such asMySQL.
+1. Integration of Pipelines with Interface
+Each group must clearly demonstrate how thethree mandatory queriesare integrated with
+thefour execution pipelines. This effectively results in:
+3 queries×4 pipelines = 12 execution combinations
+The system must provide a unified interface. A graphical user interface is not required; a
+command-line interface (CLI)is sufficient.
+A typical workflow may include:
+•Selection of pipeline (Pig / MapReduce / MongoDB / Hive)
+•Selection of query (Query 1 / Query 2 / Query 3 / Optionally - All queries)
+•Selection of batch size
+•Execution of the pipeline
+•Loading of results into MySQL
+•Generation of report
+The project must function as a single coherent tool and not as a collection of independent
+scripts.
+The data loading and cleaning process should be part of the pipeline itself. For instance, if
+a MapReduce pipeline is chosen, then loading the data from the batch source and performing
+the cleaning operations should also be implemented as MapReduce jobs, rather than using a
+separate Unix/Java/Python single-threaded script.
+2. Schema Design for MySQL Loading
+The design of the relational schema for storing results will be an important evaluation criterion.
+Loading results into MySQL must be handled systematically.
+Students are expected to design tables such as:
+•run metadata
+•batch metadata
+•query results
+•malformed record summary
+At a minimum, the database must capture the following attributes:
+1 of 3
+DAS 839 – NoSQL Systems End Semester Project – Evaluation Guidelines
+•run id
+•pipeline name
+•query name
+•batch id
+•batch size
+•average batch size
+•records processed
+•malformed record count
+•runtime
+•execution timestamp
+Students may either use separate result tables for each query or a unified table with a query
+identifier. The schema design must be clearly explained in the report.
+3. Batching Strategy
+Students must clearly describe how batching is implemented in their system.
+If the dataset is large relative to available system resources, students are allowed to divide the
+dataset into smaller batches. This must be done systematically and documented clearly.
+Alternatively, the two log files may be treated as two batches:
+•Batch 1: July dataset
+•Batch 2: August dataset
+If manual splitting is performed, students must explain:
+•Why splitting was required
+•How the dataset was divided
+•How batch IDs were assigned
+•How batch size was computed
+•How average batch size was calculated
+The emphasis is on clarity and correctness of the batching logic rather than the volume of data
+processed.
+4. Evaluation Emphasis
+The evaluation will prioritize system design and implementation quality over analytical obser-
+vations.
+Greater weight will be given to:
+•System architecture
+•Pipeline switching logic
+•Correct use of each execution technology
+2 of 3
+DAS 839 – NoSQL Systems End Semester Project – Evaluation Guidelines
+•Batching mechanism
+•MySQL schema design
+•Result loading and reporting
+•Clarity and confidence in explanation
+Lower weight will be given to only the analytical findings from the dataset.
+5. Expected Demonstration
+During the (video) demonstration, each group must show:
+•Command-line based pipeline selection
+•Execution of at least one query
+•Batch processing behaviour
+•Loading of results into MySQL
+•Reporting output with runtime and batch statistics
+•Structure of tables in MySQL
+The system must clearly demonstrate that the same query logic is preserved across all pipelines
+and that a common reporting layer is used.
+Note: If the video size is greater than 20 MB, please upload it to YouTube and share the link
+in the report.
+3 of 3

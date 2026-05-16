@@ -1,0 +1,146 @@
+DAS 839 – NoSQL Systems End Semester Project
+End Semester Project Question
+Multi-Pipeline ETL and Reporting Framework for Web Server Log Analytics
+Problem Statement
+Design and implement a prototypemulti-pipeline ETL and reporting toolthat allows
+an end user to execute thesame ETL and analytics workloadusing one of the following
+four execution choices:Apache Pig, MapReduce, MongoDB, or Hive. The objective of
+this project is to study how different data processing paradigms can be used to solve the same
+semi-structured log analytics problem, and to compare them in terms of implementation style,
+runtime, batching behaviour, and reporting suitability.
+The tool must read raw input data from web server log file(s), parse the records, transform
+them into a structured representation, execute the required analytical queries, and load the
+final aggregated results into a relational database such asMySQLorPostgreSQL. A separate
+reporting script or reporting module must then display the query results together with execution
+metadata for the selected run.
+The system must ensure that thesame source dataset, thesame logical ETL steps, and the
+same query definitionsare used across all execution choices so that the comparison remains
+fair and meaningful. Students are not allowed to change the dataset, simplify the workload for
+a particular pipeline, or manually preprocess the data outside the chosen execution pipeline.
+Dataset to be Used
+This project shall use theNASA HTTP Web Server Logsfrom the Internet Traffic Archive.
+These traces contain HTTP requests made to the NASA Kennedy Space Center web server
+and are available as ASCII log files with one request per line. The records include the host,
+timestamp, quoted request, HTTP reply code, and number of bytes returned.
+The official dataset description may be accessed at:
+https://ita.ee.lbl.gov/html/contrib/NASA-HTTP.html
+The official downloadable trace files may be obtained from:
+https://ita.ee.lbl.gov/traces/NASA_access_log_Jul95.gz
+https://ita.ee.lbl.gov/traces/NASA_access_log_Aug95.gz
+Students must use only these official raw log files as input. Decompression of the files is allowed.
+However, no manual cleaning, editing, filtering, conversion to CSV, conversion to JSON, or any
+other preprocessing outside the chosen pipeline shall be permitted.
+Dataset Specification
+The dataset consists of plain text log files in which each line corresponds to one HTTP request.
+The log format contains the following core fields: host, timestamp, request string, reply code,
+and bytes returned. The timestamps are recorded with one-second resolution. Students are
+expected to parse the request field further so that the method, resource path, and protocol
+version can be extracted wherever present.
+For the purpose of this project, each pipeline must extract and use at least the following struc-
+tured fields:host,timestamp,log date,log hour,http method,resource path,protocol version,
+status code, andbytes transferred. If the bytes field is missing or represented by-, it must
+1 of 4
+DAS 839 – NoSQL Systems End Semester Project
+be treated as0. If a record cannot be parsed, it must not be silently dropped; instead, the
+system must maintain and report the malformed-record count.
+System Requirements
+The project must provide an interface through which the end user selects exactly one of the
+four execution pipelines:Pig,MapReduce,MongoDB, orHive. Once a pipeline is selected,
+the tool must execute the complete ETL flow using that pipeline. All pipelines must implement
+equivalent semantics. This means that the same parsing rules, the same cleaning rules, the same
+filtering conditions, the same grouping logic, and the same aggregation logic must be preserved
+across all implementations.
+The project must finally load the aggregated output into eitherMySQLorPostgreSQL. The
+relational store may use one result table per query or a common result table with query iden-
+tifiers, but in either case the stored results must include thepipeline name,run identifier,
+batch identifier, and thetime of execution.
+A reporting script or reporting module must read the stored results from the relational database
+and display the final output in a clear form. The reporting component must also show the
+execution metadata of the run, including the selected pipeline, query name, runtime, batch ID,
+batch size, and average batch size.
+Mandatory Query Set
+To avoid ambiguity, every group must implement the following three queries exactly as stated
+below. The same query logic and the same output schema must be preserved across all pipelines.
+Query 1: Daily Traffic Summary
+For eachlog dateandstatus code, compute the total number of requests and the total number
+of bytes transferred. The output columns must be:
+log date, status code, request count, total bytes
+Query 2: Top Requested Resources
+Compute the top 20 requested resource paths by request count. For each such resource path,
+compute the total request count, the total bytes transferred, and the number of distinct hosts
+requesting that resource. The output columns must be:
+resource path, request count, total bytes, distinct host count
+Query 3: Hourly Error Analysis
+For eachlog dateandlog hour, compute the number of requests whose status code lies in the
+range 400–599, the total number of requests, the error rate, and the number of distinct hosts
+generating error requests. The output columns must be:
+log date, log hour, error request count, total request count, error rate,
+distinct error hosts
+2 of 4
+DAS 839 – NoSQL Systems End Semester Project
+Batching and Runtime Reporting
+The tool must process the input in batches. The meaning of batch size in this project is the
+number of input log records processed in one batch. Batch IDs must begin from 1 and
+increase sequentially. If the final batch contains fewer records than the chosen batch size, it
+must still be counted as a valid batch.
+Theaverage batch sizemust be reported as:
+total records processed / number of non-empty batches
+Theruntimemust be measured from the moment the tool starts reading the input files until the
+final aggregated results are successfully written to MySQL or PostgreSQL. Dataset download
+time, software installation time, and the time taken to separately render the report must not
+be included in the runtime. For fair comparison, the same batch size must be used across all
+pipelines in a given experiment.
+Implementation Constraints
+The project is expected to be a comparative systems prototype and not merely a collection of
+independent scripts. The interface, ETL logic, result loading, and reporting must work together
+as one coherent tool. Students must demonstrate that the chosen execution backend can be
+switched while preserving the same problem specification and query outputs.
+Students are free to decide the implementation language for the user interface, controller, or
+orchestration logic. However, the core data processing must genuinely happen using the se-
+lected execution technology. For example, a pipeline labeled as Pig must execute the ETL and
+aggregation logic through Pig scripts; similarly, a pipeline labeled as Hive must execute through
+Hive queries, and so on. Partial substitution of one pipeline by another will not be accepted.
+Project Review Process
+The project review shall happen intwo phases.
+InPhase 1, each group must present the proposed architecture of the system and demonstrate
+a working prototype with at leastone or two pipelinesimplemented. The discussion in
+this phase must clearly explain the overall design of the tool, the parsing strategy, the ETL
+workflow, the batching approach, the schema for the relational reporting database, and the plan
+for ensuring equivalence across pipelines. This review is intended to verify that the group has
+understood the problem correctly and is proceeding with a technically sound design.
+InPhase 2, the group must submit thecomplete implementation, includingall required
+pipelines. The second phase will be conductedonline. In this phase, each group must sub-
+mit avideo presentation, acompact report, and theGit repository link. The compact
+report must clearly describe the final architecture, design choices, pipeline-specific implementa-
+tion decisions, schema used for reporting, batching strategy, and the comparative observations
+obtained from the experiments.
+Video Presentation Requirements
+The video presentation submitted during Phase 2 must include alive demonstration of the
+tool. The demo must show the interface for pipeline selection, execution of at least one run,
+generation of results, storage of the aggregated output in MySQL or PostgreSQL, and the
+3 of 4
+DAS 839 – NoSQL Systems End Semester Project
+reporting output with runtime and batch statistics. Merely showing static slides, screenshots,
+or pre-recorded result tables without demonstrating the tool workflow will not be considered
+sufficient.
+It is theresponsibility of the groupto make their effort clearly visible in the video. A vague
+presentation, an unclear demo, or a video that does not convincingly show the working system
+and the contribution of the group may receive lower marks, even if a completed version of the
+project is eventually submitted.
+The presence and involvement ofall group membersmust be visible in the video presentation.
+Thenames of all membersand theirwebcams must be onwhile making the presentation.
+The presentation should reflect participation from all members rather than being delivered by
+only one person on behalf of the group.
+Final Submission Requirements
+Each group must submit the following in the final phase:
+1. source code and scripts for all implemented pipelines;
+2. the Git repository link;
+3. the compact report in PDF form;
+4. the video presentation link or file as instructed;
+5. the relational database schema and load scripts;
+6. sample outputs or screenshots, if asked separately by the instructor.
+The report must be concise but complete. It must discuss the architecture, parsing approach,
+ETL workflow, query implementation, batching logic, result schema, and major design decisions.
+It must also include a short comparison of the four pipelines in terms of correctness, runtime,
+difficulty of implementation, and suitability for semi-structured log analytics.
+4 of 4
