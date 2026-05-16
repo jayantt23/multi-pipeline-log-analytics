@@ -29,10 +29,14 @@ class PigPipeline(Pipeline):
             raise ValueError("Pig backend uses file-based batching; omit --batch-size")
         if not input_paths:
             raise ValueError("No input files provided")
+        ordered = sorted(
+            input_paths,
+            key=lambda p: (0 if "Jul" in p.name else 1, p.name),
+        )
         self.work_dir.mkdir(parents=True, exist_ok=True)
         run_dir = self.work_dir / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        self._run_inputs[run_id] = [p.resolve() for p in input_paths]
+        self._run_inputs[run_id] = [p.resolve() for p in ordered]
         self._run_dirs[run_id] = run_dir
 
     def aggregate(self, run_id: str, batch_size: int | None) -> None:
@@ -47,8 +51,16 @@ class PigPipeline(Pipeline):
         script_path = out_dir / "pig_etl.pig"
         script_path.write_text(script)
 
+        env = os.environ.copy()
+        pig_cp = env.get("PIG_CLASSPATH", "")
+        extra_cp = "/opt/homebrew/Cellar/pig/0.18.0/libexec/lib/hadoop3-runtime/*"
+        if pig_cp:
+            env["PIG_CLASSPATH"] = f"{pig_cp}:{extra_cp}"
+        else:
+            env["PIG_CLASSPATH"] = extra_cp
+
         cmd = [self.pig_cmd, "-x", self.exec_mode, "-f", str(script_path)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if res.returncode != 0:
             raise RuntimeError(
                 "Pig execution failed:\n"
@@ -168,26 +180,34 @@ class PigPipeline(Pipeline):
             )
             union_aliases.append(tag_alias)
 
-        raw_union = " UNION ".join(union_aliases)
-        regex = r"^(\\S+) \\S+ \\S+ \\[([^\\]]+)\\] \"([^\"]*)\" (\\d{3}|-) (\\d+|-)$"
+        raw_union = ", ".join(union_aliases)
+        regex = r'^(\\S+) \\S+ \\S+ \\[([^\\]]+)\\] "([^"]*)" (\\d{3}|-) (\\d+|-)$'
         script = """SET default_parallel {parallel};
 {load_lines}
-raw_all = {raw_union};
+raw_all = UNION {raw_union};
 
 parsed_raw = FOREACH raw_all GENERATE
     raw,
     batch_id,
     REGEX_EXTRACT_ALL(raw, '{regex}')
-        AS (host, timestamp_raw, request_raw, status_raw, bytes_raw);
+        AS extracted:tuple(host:chararray, timestamp_raw:chararray, request_raw:chararray, status_raw:chararray, bytes_raw:chararray);
 
-malformed = FILTER parsed_raw BY host IS NULL OR status_raw == '-';
-valid = FILTER parsed_raw BY host IS NOT NULL AND status_raw != '-';
+parsed_fields = FOREACH parsed_raw GENERATE
+    batch_id,
+    extracted.host AS host,
+    extracted.timestamp_raw AS timestamp_raw,
+    extracted.request_raw AS request_raw,
+    extracted.status_raw AS status_raw,
+    extracted.bytes_raw AS bytes_raw;
+
+malformed = FILTER parsed_fields BY host IS NULL OR status_raw == '-';
+valid = FILTER parsed_fields BY host IS NOT NULL AND status_raw != '-';
 
 req_parts = FOREACH valid GENERATE
     batch_id,
     host,
     timestamp_raw,
-    STRSPLIT(request_raw, '\\s+', 3) AS req_tokens,
+    STRSPLIT(request_raw, '\\\\s+', 3) AS req_tokens,
     status_raw,
     bytes_raw;
 
@@ -201,6 +221,7 @@ parsed = FOREACH req_parts GENERATE
     (int)status_raw AS status_code,
     (bytes_raw == '-' ? 0L : (long)bytes_raw) AS bytes_transferred;
 
+    
 parsed_enriched = FOREACH parsed GENERATE
     batch_id,
     host,
@@ -255,9 +276,9 @@ q2_proj = FOREACH q2_join GENERATE
 
 q2_sorted = ORDER q2_proj BY request_count DESC, resource_path ASC;
 q2_ranked = RANK q2_sorted BY request_count DESC, resource_path ASC DENSE;
-q2_top = FILTER q2_ranked BY rank <= 20;
+q2_top = FILTER q2_ranked BY rank_q2_sorted <= 20;
 q2_out = FOREACH q2_top GENERATE
-    (int)rank AS rank,
+    (int)rank_q2_sorted AS rank,
     resource_path,
     request_count,
     total_bytes,
@@ -285,7 +306,7 @@ total_metrics = FOREACH total_by_hour GENERATE
     COUNT_STAR(parsed_enriched) AS total_request_count;
 
 err_join = JOIN err_metrics BY (log_date, log_hour), err_hosts BY (log_date, log_hour);
-err_total = JOIN err_join BY (log_date, log_hour), total_metrics BY (log_date, log_hour);
+err_total = JOIN err_join BY (err_metrics::log_date, err_metrics::log_hour), total_metrics BY (log_date, log_hour);
 
 q3_out = FOREACH err_total GENERATE
     err_join::err_metrics::log_date AS log_date,

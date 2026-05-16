@@ -12,3 +12,4 @@ data/raw/
 dataset/
 .vscode/
 .github/
+.pig_runs/

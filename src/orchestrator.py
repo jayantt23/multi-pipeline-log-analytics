@@ -104,8 +104,12 @@ def run(
                 loader = getattr(pipeline, "load_results", None)
                 if callable(loader):
                     loader(run_id, pg_conn)
-                else:
+                elif pipeline_name == "mongodb":
                     load(run_id, pipeline.db, pg_conn)
+                else:
+                    raise NotImplementedError(
+                        f"Pipeline '{pipeline_name}' must implement load_results()"
+                    )
                 # 3. Stop the clock; final results are now persisted.
                 t1 = time.monotonic()
                 finished_at = datetime.now(timezone.utc)
