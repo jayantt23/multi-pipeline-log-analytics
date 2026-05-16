@@ -16,6 +16,7 @@ from . import orchestrator
 from .reporting.report import report
 
 PIPELINES = ["mongodb", "pig", "hive", "mr"]
+QUERIES = ["1", "2", "3", "all"]
 
 
 def _env(name: str, default: str) -> str:
@@ -32,6 +33,8 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="Directory of NASA_access_log_* files, or a single file")
     p_run.add_argument("--batch-size", required=False, type=int,
                        help="Records per batch. Omit to use file-based batching (Jul/Aug).")
+    p_run.add_argument("--query", required=False, choices=QUERIES, default="all",
+                       help="Which query to run: 1, 2, 3, or all (default: all)")
     p_run.add_argument("--keep-staging", action="store_true",
                        help="Skip drop of per-run Mongo staging collections")
     p_run.add_argument("--mongo-uri", default=_env("MONGO_URI", "mongodb://localhost:27017"))
@@ -62,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             pipeline_name=args.pipeline,
             input_path=args.input,
             batch_size=args.batch_size,
+            query=args.query,
             mongo_uri=args.mongo_uri,
             mongo_db=args.mongo_db,
             pg_dsn=args.pg_dsn,

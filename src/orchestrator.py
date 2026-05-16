@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import time
 import uuid
 from datetime import datetime, timezone
@@ -35,6 +36,40 @@ def _resolve_inputs(input_arg: Path) -> list[Path]:
     raise FileNotFoundError(f"--input does not exist: {input_arg}")
 
 
+def _create_line_batches(inputs: list[Path], run_id: str, batch_size: int) -> tuple[list[Path], Path]:
+    """Read input files and split them into chunks of batch_size lines."""
+    staging_dir = Path(".staging") / run_id
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    
+    batch_files = []
+    current_batch_idx = 1
+    current_line_count = 0
+    current_file = None
+    
+    log.info("Splitting inputs into line-based batches of %d...", batch_size)
+    for input_file in inputs:
+        with open(input_file, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                if current_file is None:
+                    batch_path = staging_dir / f"batch_{current_batch_idx:03d}.log"
+                    current_file = open(batch_path, 'w', encoding='utf-8')
+                    batch_files.append(batch_path.resolve())
+                
+                current_file.write(line)
+                current_line_count += 1
+                
+                if current_line_count >= batch_size:
+                    current_file.close()
+                    current_file = None
+                    current_line_count = 0
+                    current_batch_idx += 1
+                    
+    if current_file is not None:
+        current_file.close()
+        
+    return batch_files, staging_dir
+
+
 def _make_pipeline(name: str, mongo_uri: str, mongo_db: str) -> Pipeline:
     if name == "mongodb":
         return MongoPipeline(mongo_uri, mongo_db)
@@ -52,6 +87,7 @@ def run(
     pipeline_name: str,
     input_path: Path,
     batch_size: int | None,
+    query: str = "all",
     mongo_uri: str,
     mongo_db: str,
     pg_dsn: str,
@@ -60,12 +96,17 @@ def run(
     """Execute one full ETL run end-to-end. Returns the new run_id."""
     run_id = uuid.uuid4().hex
     if batch_size is None:
-        log.info("run_id=%s pipeline=%s batch_mode=file", run_id, pipeline_name)
+        log.info("run_id=%s pipeline=%s query=%s batch_mode=file", run_id, pipeline_name, query)
     else:
-        log.info("run_id=%s pipeline=%s batch_size=%d", run_id, pipeline_name, batch_size)
+        log.info("run_id=%s pipeline=%s query=%s batch_size=%d", run_id, pipeline_name, query, batch_size)
 
     inputs = _resolve_inputs(input_path)
     log.info("inputs: %s", [str(p) for p in inputs])
+    
+    staging_dir = None
+    if batch_size is not None:
+        inputs, staging_dir = _create_line_batches(inputs, run_id, batch_size)
+        log.info("created %d batch files in %s", len(inputs), staging_dir)
 
     pipeline = _make_pipeline(pipeline_name, mongo_uri, mongo_db)
 
@@ -73,7 +114,13 @@ def run(
     t0 = time.monotonic()
     try:
         pipeline.ingest(inputs, run_id, batch_size)
-        pipeline.aggregate(run_id, batch_size)
+        
+        # Pass query parameter if aggregate supports it, otherwise fallback (for older pipelines)
+        try:
+            pipeline.aggregate(run_id, batch_size, query=query)
+        except TypeError:
+            pipeline.aggregate(run_id, batch_size)
+            
         pipeline.final_merge(run_id)
         stats: RunStats = pipeline.collect_run_stats(run_id)
 
@@ -100,10 +147,14 @@ def run(
                     started_at=started_at,
                     batch_size=(batch_size if batch_size is not None else 0),
                     stats=stats,
+                    query_name=query,
                 )
                 loader = getattr(pipeline, "load_results", None)
                 if callable(loader):
-                    loader(run_id, pg_conn)
+                    try:
+                        loader(run_id, pg_conn, query=query)
+                    except TypeError:
+                        loader(run_id, pg_conn)
                 elif pipeline_name == "mongodb":
                     load(run_id, pipeline.db, pg_conn)
                 else:
@@ -123,6 +174,9 @@ def run(
         pipeline.cleanup(run_id, keep_staging=keep_staging)
         if hasattr(pipeline, "close"):
             pipeline.close()
+            
+        if staging_dir and staging_dir.exists() and not keep_staging:
+            shutil.rmtree(staging_dir)
 
     log.info("run %s done in %d ms", run_id, runtime_ms)
     return run_id
@@ -136,19 +190,20 @@ def _insert_runs_placeholder(
     started_at: datetime,
     batch_size: int,
     stats: RunStats,
+    query_name: str = "all",
 ) -> None:
     """Insert runs with provisional finished_at/runtime_ms; refined after load()."""
     with pg_conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO runs (
-                run_id, pipeline, status, started_at, finished_at, runtime_ms,
+                run_id, pipeline, query_name, status, started_at, finished_at, runtime_ms,
                 batch_size, num_batches, avg_batch_size,
                 total_records, malformed_count
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                run_id, pipeline_name, "running", started_at, started_at, 0,
+                run_id, pipeline_name, query_name, "running", started_at, started_at, 0,
                 batch_size, stats.num_batches, stats.avg_batch_size,
                 stats.total_records, stats.malformed_count,
             ),

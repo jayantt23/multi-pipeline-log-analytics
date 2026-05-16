@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS runs (
     run_id          TEXT PRIMARY KEY,
     pipeline        TEXT        NOT NULL,
+    query_name      TEXT        NOT NULL DEFAULT 'all',
     status          TEXT        NOT NULL DEFAULT 'completed',
     started_at      TIMESTAMPTZ NOT NULL,
     finished_at     TIMESTAMPTZ NOT NULL,
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 -- Idempotent for already-created tables that pre-date this column.
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed';
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS query_name TEXT NOT NULL DEFAULT 'all';
 
 CREATE TABLE IF NOT EXISTS q1_daily_traffic (
     run_id        TEXT   NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,

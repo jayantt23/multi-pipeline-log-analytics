@@ -25,8 +25,6 @@ class PigPipeline(Pipeline):
         self._run_dirs: dict[str, Path] = {}
 
     def ingest(self, input_paths: list[Path], run_id: str, batch_size: int | None) -> None:
-        if batch_size is not None:
-            raise ValueError("Pig backend uses file-based batching; omit --batch-size")
         if not input_paths:
             raise ValueError("No input files provided")
         ordered = sorted(
@@ -39,15 +37,13 @@ class PigPipeline(Pipeline):
         self._run_inputs[run_id] = [p.resolve() for p in ordered]
         self._run_dirs[run_id] = run_dir
 
-    def aggregate(self, run_id: str, batch_size: int | None) -> None:
-        if batch_size is not None:
-            raise ValueError("Pig backend uses file-based batching; omit --batch-size")
+    def aggregate(self, run_id: str, batch_size: int | None, query: str = "all") -> None:
         inputs = self._run_inputs.get(run_id)
         if not inputs:
             raise RuntimeError(f"No inputs registered for run {run_id}")
         out_dir = self._run_dirs[run_id]
 
-        script = self._build_pig_script(inputs, out_dir, self.parallel)
+        script = self._build_pig_script(inputs, out_dir, self.parallel, query)
         script_path = out_dir / "pig_etl.pig"
         script_path.write_text(script)
 
@@ -98,75 +94,77 @@ class PigPipeline(Pipeline):
         self._run_dirs.pop(run_id, None)
         self._run_inputs.pop(run_id, None)
 
-    def load_results(self, run_id: str, pg_conn: PgConnection) -> None:
+    def load_results(self, run_id: str, pg_conn: PgConnection, query: str = "all") -> None:
         run_dir = self._run_dirs.get(run_id)
         if not run_dir:
             raise RuntimeError(f"Missing run directory for {run_id}")
 
-        q1_rows = self._read_pig_output(run_dir / "q1_final")
-        q2_rows = self._read_pig_output(run_dir / "q2_final")
-        q3_rows = self._read_pig_output(run_dir / "q3_final")
-
         with pg_conn.cursor() as cur:
-            if q1_rows:
-                execute_values(
-                    cur,
-                    "INSERT INTO q1_daily_traffic "
-                    "(run_id, log_date, status_code, request_count, total_bytes) "
-                    "VALUES %s",
-                    [
-                        (
-                            run_id,
-                            row[0],
-                            int(row[1]),
-                            int(row[2]),
-                            int(row[3]),
-                        )
-                        for row in q1_rows
-                    ],
-                )
+            if query in ["1", "all"]:
+                q1_rows = self._read_pig_output(run_dir / "q1_final")
+                if q1_rows:
+                    execute_values(
+                        cur,
+                        "INSERT INTO q1_daily_traffic "
+                        "(run_id, log_date, status_code, request_count, total_bytes) "
+                        "VALUES %s",
+                        [
+                            (
+                                run_id,
+                                row[0],
+                                int(row[1]),
+                                int(row[2]),
+                                int(row[3]),
+                            )
+                            for row in q1_rows
+                        ],
+                    )
 
-            if q2_rows:
-                execute_values(
-                    cur,
-                    "INSERT INTO q2_top_resources "
-                    "(run_id, rank, resource_path, request_count, total_bytes, "
-                    "distinct_host_count) VALUES %s",
-                    [
-                        (
-                            run_id,
-                            int(row[0]),
-                            row[1] if row[1] else "",
-                            int(row[2]),
-                            int(row[3]),
-                            int(row[4]),
-                        )
-                        for row in q2_rows
-                    ],
-                )
+            if query in ["2", "all"]:
+                q2_rows = self._read_pig_output(run_dir / "q2_final")
+                if q2_rows:
+                    execute_values(
+                        cur,
+                        "INSERT INTO q2_top_resources "
+                        "(run_id, rank, resource_path, request_count, total_bytes, "
+                        "distinct_host_count) VALUES %s",
+                        [
+                            (
+                                run_id,
+                                int(row[0]),
+                                row[1] if row[1] else "",
+                                int(row[2]),
+                                int(row[3]),
+                                int(row[4]),
+                            )
+                            for row in q2_rows
+                        ],
+                    )
 
-            if q3_rows:
-                execute_values(
-                    cur,
-                    "INSERT INTO q3_hourly_errors "
-                    "(run_id, log_date, log_hour, error_request_count, "
-                    "total_request_count, error_rate, distinct_error_hosts) "
-                    "VALUES %s",
-                    [
-                        (
-                            run_id,
-                            row[0],
-                            int(row[1]),
-                            int(row[2]),
-                            int(row[3]),
-                            round(float(row[4]), 6),
-                            int(row[5]),
-                        )
-                        for row in q3_rows
-                    ],
-                )
+            if query in ["3", "all"]:
+                q3_rows = self._read_pig_output(run_dir / "q3_final")
+                if q3_rows:
+                    execute_values(
+                        cur,
+                        "INSERT INTO q3_hourly_errors "
+                        "(run_id, log_date, log_hour, error_request_count, "
+                        "total_request_count, error_rate, distinct_error_hosts) "
+                        "VALUES %s",
+                        [
+                            (
+                                run_id,
+                                row[0],
+                                int(row[1]),
+                                int(row[2]),
+                                int(row[3]),
+                                round(float(row[4]), 6),
+                                int(row[5]),
+                            )
+                            for row in q3_rows
+                        ],
+                    )
 
-    def _build_pig_script(self, input_paths: list[Path], out_dir: Path, parallel: int) -> str:
+    def _build_pig_script(self, input_paths: list[Path], out_dir: Path, parallel: int, query: str = "all") -> str:
         load_lines: list[str] = []
         union_aliases: list[str] = []
         for idx, path in enumerate(input_paths, start=1):
@@ -182,8 +180,9 @@ class PigPipeline(Pipeline):
 
         raw_union = ", ".join(union_aliases)
         regex = r'^(\\S+) \\S+ \\S+ \\[([^\\]]+)\\] "([^"]*)" (\\d{3}|-) (\\d+|-)$'
-        script = """SET default_parallel {parallel};
-{load_lines}
+        
+        script = f"""SET default_parallel {parallel};
+{chr(10).join(load_lines)}
 raw_all = UNION {raw_union};
 
 parsed_raw = FOREACH raw_all GENERATE
@@ -244,8 +243,10 @@ batch_group = GROUP batch_ids ALL PARALLEL {parallel};
 batch_stats = FOREACH batch_group GENERATE COUNT_STAR(batch_ids) AS num_batches;
 
 stats = CROSS total_stats, malformed_stats, batch_stats;
-STORE stats INTO '{out_dir}/stats' USING PigStorage('\t');
-
+STORE stats INTO '{str(out_dir).replace(os.sep, '/')}/stats' USING PigStorage('\\t');
+"""
+        if query in ["1", "all"]:
+            script += f"""
 q1_group = GROUP parsed_enriched BY (log_date, status_code) PARALLEL {parallel};
 q1_out = FOREACH q1_group GENERATE
     group.log_date AS log_date,
@@ -253,8 +254,11 @@ q1_out = FOREACH q1_group GENERATE
     COUNT_STAR(parsed_enriched) AS request_count,
     SUM(parsed_enriched.bytes_transferred) AS total_bytes;
 q1_sorted = ORDER q1_out BY log_date ASC, status_code ASC;
-STORE q1_sorted INTO '{out_dir}/q1_final' USING PigStorage('\t');
+STORE q1_sorted INTO '{str(out_dir).replace(os.sep, '/')}/q1_final' USING PigStorage('\\t');
+"""
 
+        if query in ["2", "all"]:
+            script += f"""
 q2_group = GROUP parsed_enriched BY resource_path PARALLEL {parallel};
 q2_metrics = FOREACH q2_group GENERATE
     group AS resource_path,
@@ -283,8 +287,11 @@ q2_out = FOREACH q2_top GENERATE
     request_count,
     total_bytes,
     distinct_host_count;
-STORE q2_out INTO '{out_dir}/q2_final' USING PigStorage('\t');
+STORE q2_out INTO '{str(out_dir).replace(os.sep, '/')}/q2_final' USING PigStorage('\\t');
+"""
 
+        if query in ["3", "all"]:
+            script += f"""
 errors = FILTER parsed_enriched BY status_code >= 400 AND status_code <= 599;
 err_group = GROUP errors BY (log_date, log_hour) PARALLEL {parallel};
 err_metrics = FOREACH err_group GENERATE
@@ -317,14 +324,8 @@ q3_out = FOREACH err_total GENERATE
     err_join::err_hosts::distinct_error_hosts AS distinct_error_hosts;
 
 q3_sorted = ORDER q3_out BY log_date ASC, log_hour ASC;
-STORE q3_sorted INTO '{out_dir}/q3_final' USING PigStorage('\t');
-""".format(
-            parallel=parallel,
-            load_lines="\n".join(load_lines),
-            raw_union=raw_union,
-            out_dir=str(out_dir).replace("\\", "/"),
-            regex=regex,
-        )
+STORE q3_sorted INTO '{str(out_dir).replace(os.sep, '/')}/q3_final' USING PigStorage('\\t');
+"""
         return script
 
     def _read_pig_output(self, path: Path) -> list[list[str]]:
