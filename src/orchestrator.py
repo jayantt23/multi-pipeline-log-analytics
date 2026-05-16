@@ -101,9 +101,11 @@ def run(
                     batch_size=(batch_size if batch_size is not None else 0),
                     stats=stats,
                 )
-                # 2. Loader writes q1/q2/q3 from Mongo into Postgres
-                #    (loader does NOT commit — caller owns the transaction).
-                load(run_id, pipeline.db, pg_conn)
+                loader = getattr(pipeline, "load_results", None)
+                if callable(loader):
+                    loader(run_id, pg_conn)
+                else:
+                    load(run_id, pipeline.db, pg_conn)
                 # 3. Stop the clock; final results are now persisted.
                 t1 = time.monotonic()
                 finished_at = datetime.now(timezone.utc)
